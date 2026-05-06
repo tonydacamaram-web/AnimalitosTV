@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Fondos -->
+    <color name="fondo_principal">#1A1A2E</color>
+    <color name="fondo_secundario">#16213E</color>
+
+    <!-- Texto -->
+    <color name="texto_principal">#FFFFFF</color>
+    <color name="texto_dorado">#FFD700</color>
+
+    <!-- Loterías -->
+    <color name="guacharo_activo">#FF6B00</color>
+    <color name="guacharito_millonario">#FFD700</color>
+    <color name="lotto_activo">#E53935</color>
+    <color name="la_granjita">#43A047</color>
+    <color name="lotto_rey">#1E88E5</color>
+    <color name="selva_plus">#6D4C41</color>
+
+    <!-- Flash nuevo resultado -->
+    <color name="flash_nuevo">#FFD700</color>
+</resources>

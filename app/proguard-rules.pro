@@ -1,0 +1,4 @@
+-keep class com.animalitostv.** { *; }
+-keepattributes *Annotation*
+-keepattributes SourceFile,LineNumberTable
+-dontwarn org.jsoup.**

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Fondo circular dorado -->
+    <path
+        android:fillColor="#FFD700"
+        android:pathData="M54,54 m-40,0 a40,40 0 1,0 80,0 a40,40 0 1,0 -80,0"/>
+    <!-- Letra A estilizada -->
+    <path
+        android:fillColor="#1A1A2E"
+        android:pathData="M54,24 L34,74 L42,74 L50,56 L58,56 L66,74 L74,74 Z M54,34 L62,54 L46,54 Z"/>
+</vector>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AnimalitosTV</string>
+    <string name="pendiente">Pendiente</string>
+    <string name="sin_conexion">Sin conexión</string>
+    <string name="ultima_actualizacion">Última actualización: %s</string>
+    <string name="ingrese_pin">Ingrese PIN</string>
+    <string name="pin_incorrecto">PIN incorrecto</string>
+    <string name="configuracion">Configuración</string>
+    <string name="historial">Historial</string>
+    <string name="forzar_actualizacion">Forzar actualización</string>
+    <string name="limpiar_base_datos">Limpiar base de datos</string>
+    <string name="ver_logs">Ver logs de errores</string>
+</resources>
