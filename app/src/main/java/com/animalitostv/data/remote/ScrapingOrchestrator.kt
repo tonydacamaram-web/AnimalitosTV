@@ -3,9 +3,14 @@ package com.animalitostv.data.remote
 import com.animalitostv.data.repository.LogRepository
 import com.animalitostv.data.repository.ResultadoRepository
 import com.animalitostv.domain.model.ResultadoSorteo
+import com.animalitostv.util.Constants
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -51,20 +56,46 @@ class ScrapingOrchestrator @Inject constructor(
             }
         }
 
-        if (combinados.isNotEmpty()) {
-            resultadoRepository.guardarTodos(combinados)
+        // Si estamos scrapeando el día actual, descartar resultados cuyo horario de sorteo
+        // aún no ha transcurrido. Esto evita guardar resultados del día anterior que los
+        // sitios web siguen mostrando al inicio de un nuevo día operativo.
+        val ahoraVE = ZonedDateTime.now(Constants.ZONA_HORARIA_VE)
+        val hoyVE = ahoraVE.toLocalDate()
+        val aGuardar = if (fecha == hoyVE) {
+            val horaActualVE = ahoraVE.toLocalTime()
+            combinados.filter { resultado ->
+                val sorteoTime = parsearHoraLocal(resultado.hora)
+                sorteoTime == null || !sorteoTime.isAfter(horaActualVE.plusMinutes(5))
+            }
+        } else {
+            combinados
+        }
+
+        if (aGuardar.isNotEmpty()) {
+            resultadoRepository.guardarTodos(aGuardar)
+            val descartados = combinados.size - aGuardar.size
             logRepository.registrar(
                 tipo = "SCRAPING",
-                mensaje = "OK: ${combinados.size} resultados totales " +
-                    "(tuazar=${deTuazar.size}, lotoven=${deLotoven.size}, loteriadehoy=${deLoteriadehoy.size})"
+                mensaje = "OK: ${aGuardar.size} resultados guardados" +
+                    (if (descartados > 0) ", $descartados descartados (sorteo aún no ocurrido)" else "") +
+                    " (tuazar=${deTuazar.size}, lotoven=${deLotoven.size}, loteriadehoy=${deLoteriadehoy.size})"
             )
             true
         } else {
             logRepository.registrar(
                 tipo = "SCRAPING",
-                mensaje = "Todas las fuentes retornaron 0 resultados para $fecha"
+                mensaje = "0 resultados válidos para $fecha — todos los sorteos son futuros o las fuentes no devolvieron datos"
             )
             false
+        }
+    }
+
+    private fun parsearHoraLocal(hora: String): LocalTime? {
+        return try {
+            val formatter = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
+            LocalTime.parse(hora.uppercase(Locale.US), formatter)
+        } catch (e: Exception) {
+            null
         }
     }
 
