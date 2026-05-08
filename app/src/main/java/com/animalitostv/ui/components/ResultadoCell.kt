@@ -62,14 +62,20 @@ fun ResultadoCell(
             .padding(horizontal = 2.dp, vertical = 3.dp),
         contentAlignment = Alignment.Center
     ) {
+        // Para Ballena (numeroAnimal == -1, representado como "00" en pantalla),
+        // los archivos de imagen se nombran "00.png" en lugar de "-1.png".
+        val numKey = if (resultado?.numeroAnimal == -1) "00" else resultado?.numeroAnimal?.toString()
+        val numDisplay = if (resultado?.numeroAnimal == -1) "00" else
+            resultado?.numeroAnimal?.let { String.format("%02d", it) }
+
         // Fondo por animal (si existe el archivo de imagen)
-        val tieneFondo = remember(resultado?.numeroAnimal) {
-            resultado != null && File("${Constants.FONDOS_PATH}/${resultado.numeroAnimal}.png").exists()
+        val tieneFondo = remember(numKey) {
+            numKey != null && File("${Constants.FONDOS_PATH}/$numKey.png").exists()
         }
         if (tieneFondo && resultado != null) {
             AsyncImage(
-                model = remember(resultado.numeroAnimal) {
-                    File("${Constants.FONDOS_PATH}/${resultado.numeroAnimal}.png")
+                model = remember(numKey) {
+                    File("${Constants.FONDOS_PATH}/$numKey.png")
                 },
                 contentDescription = null,
                 modifier = Modifier.matchParentSize(),
@@ -108,7 +114,7 @@ fun ResultadoCell(
                 )
 
                 // Imagen del animal y textos
-                val imagenFile = File("${Constants.ANIMALES_PATH}/${resultado.numeroAnimal}.png")
+                val imagenFile = File("${Constants.ANIMALES_PATH}/$numKey.png")
                 if (imagenFile.exists()) {
                     AsyncImage(
                         model = imagenFile,
@@ -117,7 +123,7 @@ fun ResultadoCell(
                         contentScale = ContentScale.Fit
                     )
                     Text(
-                        text = String.format("%02d", resultado.numeroAnimal),
+                        text = numDisplay ?: "",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = if (flashActivo) FlashNuevo else TextoPrincipal,
@@ -135,7 +141,7 @@ fun ResultadoCell(
                     )
                 } else {
                     Text(
-                        text = String.format("%02d", resultado.numeroAnimal),
+                        text = numDisplay ?: "",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = if (flashActivo) FlashNuevo else colorLoteria,

@@ -26,9 +26,20 @@ object ScraperUtils {
     }
 
     /**
+     * Parsea el string de número de animal desde el HTML.
+     * "00" se mapea a -1 internamente para distinguirlo de 0 (Delfín).
+     */
+    fun parsearNumeroAnimal(str: String): Int? {
+        val limpio = str.trim()
+        if (limpio == "00") return -1
+        return limpio.toIntOrNull()
+    }
+
+    /**
      * Valida que el número de animal sea coherente con la lotería.
      */
     fun esNumeroValido(numero: Int, loteria: Loteria): Boolean {
+        if (numero == -1) return true  // -1 = Ballena ("00"), válida en todas las loterías
         return numero in 0..loteria.maxAnimal
     }
 

@@ -69,7 +69,7 @@ class TuAzarScraper @Inject constructor(
                     val numeroStr = partes[0].trim()
                     if (!numeroStr.all { it.isDigit() }) continue
 
-                    val numero = numeroStr.toIntOrNull() ?: continue
+                    val numero = ScraperUtils.parsearNumeroAnimal(numeroStr) ?: continue
                     if (!ScraperUtils.esNumeroValido(numero, loteria)) continue
 
                     resultados.add(

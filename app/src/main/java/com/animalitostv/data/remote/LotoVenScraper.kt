@@ -68,7 +68,7 @@ class LotoVenScraper @Inject constructor(
             )
 
             for (match in patron.findAll(textoBuscar)) {
-                val numero = match.groupValues[1].toIntOrNull() ?: continue
+                val numero = ScraperUtils.parsearNumeroAnimal(match.groupValues[1]) ?: continue
                 val hora = ScraperUtils.normalizarHora(match.groupValues[3]) ?: continue
 
                 if (!ScraperUtils.esNumeroValido(numero, loteria)) continue

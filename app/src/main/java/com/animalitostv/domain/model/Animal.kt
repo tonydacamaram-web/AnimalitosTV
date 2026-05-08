@@ -10,6 +10,7 @@ data class Animal(
  * Usado por: Lotto Activo, La Granjita, Lotto Rey, Selva Plus.
  */
 val ANIMALES_ESTANDAR: List<Animal> = listOf(
+    Animal(-1, "Ballena"),  // "00" en los sitios web; -1 como clave interna para no chocar con 0 (Delfín)
     Animal(0, "Delfín"),
     Animal(1, "Carnero"),
     Animal(2, "Toro"),

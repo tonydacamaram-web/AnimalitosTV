@@ -64,9 +64,9 @@ class LoteriaDeHoyScraper @Inject constructor(
                     val hora = ScraperUtils.normalizarHora(textoHora) ?: continue
                     if (hora !in loteria.horarios) continue
 
-                    // Parsear "34 Venado" → número=34
+                    // Parsear "34 Venado" → número=34, "00 Ballena" → -1
                     val partes = textoAnimal.split(" ", limit = 2)
-                    val numero = partes[0].trim().toIntOrNull() ?: continue
+                    val numero = ScraperUtils.parsearNumeroAnimal(partes[0]) ?: continue
                     if (!ScraperUtils.esNumeroValido(numero, loteria)) continue
 
                     if (resultados.none { it.loteria == loteria && it.hora == hora }) {
@@ -93,7 +93,7 @@ class LoteriaDeHoyScraper @Inject constructor(
                         val hora = ScraperUtils.normalizarHora(textoHora) ?: continue
                         if (hora !in loteria.horarios) continue
 
-                        val numero = textoAnimal.split(" ").firstOrNull()?.toIntOrNull() ?: continue
+                        val numero = ScraperUtils.parsearNumeroAnimal(textoAnimal.split(" ").firstOrNull() ?: "") ?: continue
                         if (!ScraperUtils.esNumeroValido(numero, loteria)) continue
 
                         if (resultados.none { it.loteria == loteria && it.hora == hora }) {
