@@ -133,7 +133,7 @@ La pantalla se divide en las siguientes zonas:
 
 ### 4.2 El Guacharito Millonario
 - **IOBPAS:** Lotería de Oriente
-- **Animales:** 101 figuras (00-100) ⚠️ CORREGIDO — originalmente documentado como 77, pero son 101
+- **Animales:** 101 figuras (00 y 0-99) ⚠️ CORREGIDO — originalmente documentado como 77, pero son 101 (el 100 no existe: "0" es Delfín y "00" es Ballena)
 - **Sorteos:** 12 diarios (lunes a domingo)
 - **Horarios:** 8:30 AM, 9:30 AM, 10:30 AM, 11:30 AM, 12:30 PM, 1:30 PM, 2:30 PM, 3:30 PM, 4:30 PM, 5:30 PM, 6:30 PM, 7:30 PM
 - **Color de columna:** #FFD700 (dorado)
@@ -166,16 +166,16 @@ La pantalla se divide en las siguientes zonas:
 ### 4.6 Selva Plus
 - **Operadora:** Inversiones Unidas Plus C.A.
 - **IOBPAS:** Lotería de Oriente
-- **Animales:** 38 figuras (00, 0-36)
-- **Sorteos:** 12 diarios (lunes a domingo)
-- **Horarios:** 8:00 AM, 9:00 AM, 10:00 AM, 11:00 AM, 12:00 PM, 1:00 PM, 2:00 PM, 3:00 PM, 4:00 PM, 5:00 PM, 6:00 PM, 7:00 PM
+- **Animales:** 101 figuras (00 y 0-99) ⚠️ CAMBIO DE MODALIDAD — ahora igual que Guacharito Millonario (el 100 no existe)
+- **Sorteos:** 13 diarios (lunes a domingo)
+- **Horarios:** 8:15 AM, 9:15 AM, 10:15 AM, 11:15 AM, 12:15 PM, 1:15 PM, 2:15 PM, 3:15 PM, 4:15 PM, 5:15 PM, 6:15 PM, 7:15 PM, 8:15 PM
 - **Color de columna:** #6D4C41 (marrón selva)
 
 ---
 
 ## 5. LISTADO COMPLETO DE ANIMALES
 
-### 5.1 Animales estándar (38 figuras — Lotto Activo, La Granjita, Lotto Rey, Selva Plus)
+### 5.1 Animales estándar (38 figuras — Lotto Activo, La Granjita, Lotto Rey)
 ```
 00 - Delfín (o Ballena según lotería)
 0  - Ballena (o Delfín)
@@ -512,6 +512,9 @@ Cada columna de lotería tiene su color de header y bordes sutiles:
 ```xml
 <uses-permission android:name="android.permission.INTERNET" />
 <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+<uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+<uses-permission android:name="android.permission.WRITE_SETTINGS"
+    tools:ignore="ProtectedPermissions" />
 <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
@@ -519,6 +522,10 @@ Cada columna de lotería tiene su color de header y bordes sutiles:
 <uses-permission android:name="android.permission.WAKE_LOCK" />
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 ```
+
+**Notas:**
+- `CHANGE_WIFI_MULTICAST_STATE` es un permiso normal (sin diálogo) para mDNS/DNS-SD.
+- `WRITE_SETTINGS` es un permiso especial ("Modificar ajustes del sistema"); si no se concede, el nombre de red `animalitostv.local` debe fijarse a mano en Ajustes del TV. El manifest requiere `xmlns:tools="http://schemas.android.com/tools"` para el `tools:ignore`.
 
 ---
 
@@ -616,7 +623,7 @@ Estos puntos surgieron durante el desarrollo y prueba real de la app:
 
 | Aspecto | Especificación original | Realidad verificada |
 |---------|------------------------|---------------------|
-| Guacharito Millonario animales | 77 figuras (00-75) | **101 figuras (00-100)** |
+| Guacharito Millonario animales | 77 figuras (00-75) | **101 figuras (00 y 0-99)** |
 | Guacharo Activo animales | 77 figuras (00-75) | 76 figuras (00-75) — correcto |
 | Arquitectura scraping | Cascada (falla → siguiente) | **Paralelo + fusión** (mayor cobertura) |
 | Retry con delays | 3 intentos × 3 fuentes = hasta 3 min | Sin delays — respuesta inmediata |
@@ -649,6 +656,40 @@ Esto convertía "1:00 PM" → "1:00 AM" (1 < 12), causando que TODOS los resulta
 
 La app expone un servidor HTTP en el **puerto 8080** accesible desde cualquier navegador en la misma red WiFi.
 
+### Nombre fijo en la red (`animalitostv.local`)
+El servidor se publica de dos formas complementarias:
+
+1. **Hostname mDNS** — el navegador resuelve `animalitostv.local` porque el TV anuncia ese hostname. En Android el hostname `.local` proviene del **nombre del dispositivo** (`Settings.Global` → `device_name`, Android 7.1+), **no** del nombre del servicio NSD.
+   - La app intenta fijarlo al arrancar: `service/DeviceNameHelper.kt` → `asegurarNombreDispositivo()`, llamado desde `MainActivity.iniciarServidorAds()`.
+   - Requiere el permiso especial `WRITE_SETTINGS` ("Modificar ajustes del sistema"). Si no está concedido, el cambio falla en silencio (solo se registra en log).
+   - **Método garantizado (manual):** Ajustes del TV → Acerca de / Preferencias del dispositivo → **Nombre del dispositivo** → `animalitostv`. Luego reconectar la red (o reiniciar el TV) para que se anuncie el nuevo hostname.
+2. **Servicio DNS-SD** — `service/MdnsAdvertiser.kt` registra `_http._tcp.` con `NsdManager` (útil para descubrimiento con herramientas Bonjour; **no** crea el hostname).
+
+URL resultante:
+
+```
+http://animalitostv.local:8080
+```
+
+- Clases: `service/DeviceNameHelper.kt` (hostname) y `service/MdnsAdvertiser.kt` (servicio DNS-SD) — se ejecutan en `MainActivity.iniciarServidorAds()`; `unregister()` en `onDestroy()`
+- Constantes: `Constants.AD_SERVER_PORT = 8080`, `Constants.MDNS_SERVICE_NAME = "animalitostv"`, `Constants.MDNS_SERVICE_TYPE = "_http._tcp."`
+- Permisos: `CHANGE_WIFI_MULTICAST_STATE` (normal, sin diálogo en runtime) y `WRITE_SETTINGS` (`tools:ignore="ProtectedPermissions"`, para fijar el hostname)
+- Si `.local` o el registro NSD fallan, el servidor HTTP sigue funcionando por IP (fallo silencioso)
+
+**Requisitos en la PC (cliente):**
+- Windows 10+/11 (mDNS nativo); macOS e iPhone/iPad también resuelven `.local`
+- Red marcada como **Privada** en Windows (en red Pública puede bloquearse el mDNS)
+- PC y TV en la **misma subred**, sin "aislamiento de clientes" (AP isolation) ni VLAN separadas
+
+**Límites de resolución `.local` (dependen del cliente):**
+| Cliente | ¿`animalitostv.local`? |
+|---------|------------------------|
+| Windows 10+/11, macOS, iPhone/iPad | ✅ Sí (con nombre de dispositivo `animalitostv`) |
+| Navegadores de Android | ❌ No (usar IP) |
+| Smart TV | ❌ No (usar IP) |
+
+Por eso Configuración muestra **ambas** URLs, el aviso para fijar el nombre del dispositivo y se recomienda reservar la IP del TV en el router (DHCP) como respaldo garantizado.
+
 ### Rutas
 | Método | URI | Función |
 |--------|-----|---------|
@@ -662,7 +703,7 @@ La app expone un servidor HTTP en el **puerto 8080** accesible desde cualquier n
 | GET | `/delete/fondos?file=X` | Eliminar fondo de animal |
 
 ### Clase: `service/AdHttpServer.kt`
-- Extiende `NanoHTTPD(8080)`
+- Extiende `NanoHTTPD(Constants.AD_SERVER_PORT)` (8080)
 - Inicia en `MainActivity.onCreate()`, se detiene en `onDestroy()`
 - Validación anti path-traversal en delete (`.canonicalPath.startsWith`)
 - Extensiones permitidas: imágenes (`jpg, jpeg, png, webp, bmp`) y video (`mp4, avi, mkv, mov, webm`)

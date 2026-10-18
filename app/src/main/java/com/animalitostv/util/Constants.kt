@@ -25,6 +25,11 @@ object Constants {
     const val AD_ROTATION_DEFAULT_SECONDS = 10
     const val AD_PANEL_WIDTH_DEFAULT_PERCENT = 25
 
+    // Servidor web local (NanoHTTPD) y nombre fijo en la red (mDNS)
+    const val AD_SERVER_PORT = 8080
+    const val MDNS_SERVICE_NAME = "animalitostv"
+    const val MDNS_SERVICE_TYPE = "_http._tcp."
+
     const val USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 

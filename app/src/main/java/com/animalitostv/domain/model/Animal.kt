@@ -7,7 +7,7 @@ data class Animal(
 
 /**
  * Catálogo de animales estándar (38 figuras: 00 y 0-36 + 37).
- * Usado por: Lotto Activo, La Granjita, Lotto Rey, Selva Plus.
+ * Usado por: Lotto Activo, La Granjita, Lotto Rey.
  */
 val ANIMALES_ESTANDAR: List<Animal> = listOf(
     Animal(-1, "Ballena"),  // "00" en los sitios web; -1 como clave interna para no chocar con 0 (Delfín)
@@ -97,35 +97,35 @@ val ANIMALES_EXTENDIDOS: List<Animal> = ANIMALES_ESTANDAR + listOf(
 )
 
 /**
- * Catálogo Guacharito Millonario (101 figuras: 00-100).
- * Incluye los 76 anteriores + 25 adicionales.
+ * Catálogo Guacharito Millonario / Selva Plus (101 figuras: 00 y 0-99).
+ * Incluye las 77 anteriores (00 + 0-75) + 24 adicionales (76-99) = 101 figuras.
+ * Nota: el número 100 NO existe — "0" es Delfín y "00" es Ballena.
  */
 val ANIMALES_GUACHARITO: List<Animal> = ANIMALES_EXTENDIDOS + listOf(
-    Animal(76, "Delfín 2"),
-    Animal(77, "Carnero 2"),
-    Animal(78, "Toro 2"),
-    Animal(79, "Ciempiés 2"),
-    Animal(80, "Alacrán 2"),
-    Animal(81, "León 2"),
-    Animal(82, "Rana 2"),
-    Animal(83, "Perico 2"),
-    Animal(84, "Ratón 2"),
-    Animal(85, "Águila 2"),
-    Animal(86, "Tigre 2"),
-    Animal(87, "Gato 2"),
-    Animal(88, "Caballo 2"),
-    Animal(89, "Mono 2"),
-    Animal(90, "Paloma 2"),
-    Animal(91, "Zorro 2"),
-    Animal(92, "Oso 2"),
-    Animal(93, "Pavo 2"),
-    Animal(94, "Burro 2"),
-    Animal(95, "Chivo 2"),
-    Animal(96, "Cochino 2"),
-    Animal(97, "Gallo 2"),
-    Animal(98, "Camello 2"),
-    Animal(99, "Cebra 2"),
-    Animal(100, "Iguana 2")
+    Animal(76, "Rinoceronte"),
+    Animal(77, "Pingüino"),
+    Animal(78, "Antílope"),
+    Animal(79, "Calamar"),
+    Animal(80, "Murciélago"),
+    Animal(81, "Cuervo"),
+    Animal(82, "Cucaracha"),
+    Animal(83, "Búho"),
+    Animal(84, "Camarón"),
+    Animal(85, "Hámster"),
+    Animal(86, "Buey"),
+    Animal(87, "Cabra"),
+    Animal(88, "Erizo de Mar"),
+    Animal(89, "Anguila"),
+    Animal(90, "Hurón"),
+    Animal(91, "Morrocoy"),
+    Animal(92, "Cisne"),
+    Animal(93, "Gaviota"),
+    Animal(94, "Pajuil"),
+    Animal(95, "Escarabajo"),
+    Animal(96, "Caballito de Mar"),
+    Animal(97, "Loro"),
+    Animal(98, "Cocodrilo"),
+    Animal(99, "Guacharito")
 )
 
 /** Devuelve el nombre del animal por número para la lotería indicada. */
@@ -138,6 +138,7 @@ fun nombreAnimal(numero: Int, esExtendida: Boolean): String {
 fun nombreAnimalPorLoteria(numero: Int, loteria: com.animalitostv.domain.model.Loteria): String {
     val catalogo = when (loteria) {
         com.animalitostv.domain.model.Loteria.GUACHARITO_MILLONARIO -> ANIMALES_GUACHARITO
+        com.animalitostv.domain.model.Loteria.SELVA_PLUS -> ANIMALES_GUACHARITO
         com.animalitostv.domain.model.Loteria.GUACHARO_ACTIVO -> ANIMALES_EXTENDIDOS
         else -> ANIMALES_ESTANDAR
     }

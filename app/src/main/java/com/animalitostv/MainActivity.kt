@@ -22,9 +22,12 @@ import androidx.navigation.compose.rememberNavController
 import com.animalitostv.data.repository.ConfiguracionRepository
 import com.animalitostv.service.AdHttpServer
 import com.animalitostv.service.CleanupWorker
+import com.animalitostv.service.DeviceNameHelper
+import com.animalitostv.service.MdnsAdvertiser
 import com.animalitostv.service.ScrapingWorker
 import com.animalitostv.ui.navigation.AnimalitosNavGraph
 import com.animalitostv.ui.theme.AnimalitosTheme
+import com.animalitostv.util.Constants
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
@@ -36,6 +39,7 @@ class MainActivity : ComponentActivity() {
     lateinit var configRepository: ConfiguracionRepository
 
     private var adHttpServer: AdHttpServer? = null
+    private var mdnsAdvertiser: MdnsAdvertiser? = null
     private lateinit var connectivityManager: ConnectivityManager
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
@@ -102,14 +106,19 @@ class MainActivity : ComponentActivity() {
 
     private fun iniciarServidorAds() {
         try {
-            adHttpServer = AdHttpServer().apply { start() }
-            android.util.Log.i("MainActivity", "Servidor de ads iniciado en puerto 8080")
+            adHttpServer = AdHttpServer(Constants.AD_SERVER_PORT).apply { start() }
+            android.util.Log.i("MainActivity", "Servidor de ads iniciado en puerto ${Constants.AD_SERVER_PORT}")
+
+            // Fijar el hostname y publicar el servicio DNS-SD (mDNS → animalitostv.local)
+            DeviceNameHelper.asegurarNombreDispositivo(this)
+            mdnsAdvertiser = MdnsAdvertiser(this).also { it.register() }
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "No se pudo iniciar servidor de ads", e)
         }
     }
 
     override fun onDestroy() {
+        mdnsAdvertiser?.unregister()
         adHttpServer?.stop()
         super.onDestroy()
     }

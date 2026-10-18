@@ -74,7 +74,7 @@ Activar **"Instalar desde fuentes desconocidas"** en Ajustes → Seguridad.
 ## Funcionalidades
 
 ### Pantalla principal
-- Grilla de **5 loterías** × 12 sorteos en modo landscape (Lotto Rey oculto temporalmente)
+- Grilla de **5 loterías** × hasta 13 sorteos en modo landscape (Lotto Rey oculto temporalmente)
 - Reloj digital en hora Venezuela (UTC-4), formato 12h/24h configurable
 - Panel publicitario lateral izquierdo (imágenes + videos, ancho configurable)
 - Ticker de estadísticas en la parte inferior (calientes, fríos, rachas)
@@ -86,7 +86,12 @@ Activar **"Instalar desde fuentes desconocidas"** en Ajustes → Seguridad.
 
 ### Panel de administración web
 - Servidor HTTP en puerto 8080 (NanoHTTPD), accesible desde cualquier navegador en la misma red WiFi
-- URL visible en Configuración → sección "Gestión de Publicidad"
+- **Nombre fijo en la red:** `http://animalitostv.local:8080` — el hostname `.local` lo anuncia el TV según su **nombre de dispositivo**; la app intenta fijarlo a `animalitostv` al arrancar (requiere `WRITE_SETTINGS`)
+- **Si `.local` no resuelve:** fija el nombre del dispositivo del TV a `animalitostv` (Ajustes → Acerca de / Preferencias del dispositivo → Nombre del dispositivo), reconecta la red y reintenta
+- **Respaldo por IP:** `http://<IP-del-TV>:8080` — siempre funciona (también en navegadores de Android y Smart TV, que no resuelven `.local`)
+- Ambas URLs visibles en Configuración → sección "Gestión de Publicidad"
+- **Recomendado:** reservar la IP del TV en el router (DHCP) para que no cambie
+- **En la PC:** red marcada como **Privada** en Windows, misma subred y sin "aislamiento de clientes" (AP isolation) en el router
 - **Tab Publicidad:** subir/eliminar imágenes y videos de `/sdcard/AnimalitosAds/`
 - **Tab Logo:** subir logo del negocio (se guarda como `logo.png` automáticamente)
 - **Tab Fondos animales:** subir hasta 101 fondos PNG (nombrar como `0.png` … `100.png`)
@@ -97,7 +102,7 @@ Activar **"Instalar desde fuentes desconocidas"** en Ajustes → Seguridad.
 - Panel publicitario: ancho, rotación, audio, carpeta
 - Display: reloj 24h, velocidad del ticker
 - Sistema: auto-inicio, pantalla encendida
-- **Gestión de Publicidad:** muestra URL `http://IP:8080` del servidor web
+- **Gestión de Publicidad:** muestra la URL por nombre `http://animalitostv.local:8080` y el respaldo por IP, con la indicación de fijar el nombre del dispositivo si `.local` no responde
 - **Botón "Forzar actualización ahora"** — ejecuta scraping inmediato
 - Visor de logs de errores con timestamp y fuente
 
@@ -112,11 +117,11 @@ Activar **"Instalar desde fuentes desconocidas"** en Ajustes → Seguridad.
 | Lotería | Figuras | Rango |
 |---------|---------|-------|
 | Guacharo Activo | 76 | 00–75 |
-| Guacharito Millonario | 101 | 00–100 |
+| Guacharito Millonario | 101 | 00, 0–99 |
 | Lotto Activo | 38 | 00–37 |
 | La Granjita | 38 | 00–37 |
 | Lotto Rey | 38 | 00–37 |
-| Selva Plus | 38 | 00–37 |
+| Selva Plus | 101 | 00, 0–99 |
 
 ---
 
@@ -224,6 +229,8 @@ h3 → "Resultados Lotto Activo"
 |---------|-----|
 | `INTERNET` | Scraping web + servidor HTTP local |
 | `ACCESS_NETWORK_STATE` | Detectar conexión/desconexión |
+| `CHANGE_WIFI_MULTICAST_STATE` | Publicar el servidor por mDNS/DNS-SD (permiso normal, sin diálogo) |
+| `WRITE_SETTINGS` | Fijar el nombre de red del TV (`animalitostv.local`); requiere "Modificar ajustes del sistema" |
 | `READ_EXTERNAL_STORAGE` | Publicidad y logos (API ≤ 32) |
 | `READ_MEDIA_IMAGES` | Imágenes publicitarias (API 33+) |
 | `READ_MEDIA_VIDEO` | Videos publicitarios (API 33+) |
@@ -234,6 +241,8 @@ h3 → "Resultados Lotto Activo"
 | `FOREGROUND_SERVICE` | WorkManager |
 
 > **Android 11+:** Al primer inicio la app solicita el permiso "Acceso a todos los archivos" — necesario para que el servidor web pueda guardar los archivos subidos.
+>
+> **Nombre `.local`:** `WRITE_SETTINGS` no se concede automáticamente. Si no se concede, el nombre de red debe fijarse a mano en Ajustes del TV para que `animalitostv.local` resuelva.
 
 ---
 
@@ -303,6 +312,9 @@ app/src/main/java/com/animalitostv/
 ## Changelog
 
 ### v1.3 (actual)
+- **Selva Plus ampliada** — pasa a modalidad extendida: 101 figuras (`00` y `0`–`99`), 13 sorteos a las `:15` (8:15 AM a 8:15 PM) y catálogo `ANIMALES_GUACHARITO` (también en estadísticas)
+- **Fix Guacharito Millonario** — `maxAnimal` corregido a `99` (el `100` no existe; son 101 figuras: `00` y `0`–`99`)
+- **Nombre fijo de red (`animalitostv.local`)** — la app fija el nombre de dispositivo para que el hostname resuelva; IP visible como respaldo
 - **Lotto Rey oculto** — campo `visible=false` en el enum; fácilmente reactivable
 - **Servidor web local (NanoHTTPD puerto 8080)** — 3 tabs: Publicidad, Logo, Fondos animales
 - **Gestión de publicidad remota** desde cualquier navegador en la misma red WiFi
@@ -324,7 +336,7 @@ app/src/main/java/com/animalitostv/
 - **Scrapers reescritos** con selectores HTML verificados en producción
 - **Arquitectura cambiada** de cascada a paralelo — las 3 fuentes corren simultáneamente
 - **Fix crítico** `normalizarHora`: preserva AM/PM original (resolvía resultados de tarde vacíos)
-- **Guacharito Millonario** ampliado a 101 figuras (00-100), catálogo `ANIMALES_GUACHARITO`
+- **Guacharito Millonario** ampliado a 101 figuras (00 y 0-99), catálogo `ANIMALES_GUACHARITO`
 - **`esNumeroValido`** usa `loteria.maxAnimal` en vez de valores hardcodeados
 - **Auto-refresh** cada 5 minutos en `MainViewModel` (independiente del WorkManager)
 - **Botón "Forzar actualización"** en pantalla de Configuración

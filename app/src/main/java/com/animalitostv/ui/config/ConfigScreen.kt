@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.animalitostv.ui.theme.*
+import com.animalitostv.util.Constants
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -149,6 +150,7 @@ fun ConfigScreen(
                 item { SeccionTitulo("Gestión de Publicidad") }
                 item {
                     val ip = viewModel.ipLocal
+                    val puerto = Constants.AD_SERVER_PORT
                     Card(
                         colors = CardDefaults.cardColors(containerColor = Color(0xFF0D1B2A)),
                         modifier = Modifier.fillMaxWidth()
@@ -162,15 +164,39 @@ fun ConfigScreen(
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "Desde un navegador en la misma red:",
+                                "Nombre fijo (Windows, macOS, iPhone/iPad):",
                                 fontSize = 11.sp,
                                 color = TextoSecundario
                             )
                             Text(
-                                "http://$ip:8080",
+                                "http://${Constants.MDNS_SERVICE_NAME}.local:$puerto",
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = TextoDorado
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Respaldo por IP (Android y Smart TV):",
+                                fontSize = 11.sp,
+                                color = TextoSecundario
+                            )
+                            Text(
+                                "http://$ip:$puerto",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextoDorado
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "El nombre .local no se resuelve en navegadores de Android ni en Smart TV: usa la IP en esos casos.",
+                                fontSize = 9.sp,
+                                color = TextoSecundario
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Si animalitostv.local no responde, fija el nombre del dispositivo del TV como \"animalitostv\" en Ajustes y reconecta la red.",
+                                fontSize = 9.sp,
+                                color = TextoSecundario
                             )
                         }
                     }

@@ -20,6 +20,7 @@ class GetEstadisticasUseCase @Inject constructor(
     ): EstadisticasLoteria {
         val catalogo = when (loteria) {
             Loteria.GUACHARITO_MILLONARIO -> ANIMALES_GUACHARITO
+            Loteria.SELVA_PLUS -> ANIMALES_GUACHARITO
             Loteria.GUACHARO_ACTIVO -> ANIMALES_EXTENDIDOS
             else -> ANIMALES_ESTANDAR
         }
