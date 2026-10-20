@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.animalitostv.domain.model.ResultadoSorteo
 import com.animalitostv.ui.theme.*
-import com.animalitostv.util.Constants
+import com.animalitostv.util.StoragePaths
 import kotlinx.coroutines.delay
 import java.io.File
 
@@ -70,12 +70,12 @@ fun ResultadoCell(
 
         // Fondo por animal (si existe el archivo de imagen)
         val tieneFondo = remember(numKey) {
-            numKey != null && File("${Constants.FONDOS_PATH}/$numKey.png").exists()
+            numKey != null && File(StoragePaths.fondos, "$numKey.png").exists()
         }
         if (tieneFondo && resultado != null) {
             AsyncImage(
                 model = remember(numKey) {
-                    File("${Constants.FONDOS_PATH}/$numKey.png")
+                    File(StoragePaths.fondos, "$numKey.png")
                 },
                 contentDescription = null,
                 modifier = Modifier.matchParentSize(),
@@ -114,7 +114,7 @@ fun ResultadoCell(
                 )
 
                 // Imagen del animal y textos
-                val imagenFile = File("${Constants.ANIMALES_PATH}/$numKey.png")
+                val imagenFile = File(StoragePaths.animales, "$numKey.png")
                 if (imagenFile.exists()) {
                     AsyncImage(
                         model = imagenFile,

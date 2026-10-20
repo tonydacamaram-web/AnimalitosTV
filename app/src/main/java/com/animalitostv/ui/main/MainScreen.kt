@@ -149,7 +149,7 @@ private fun Header(
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            val logoFile = remember { java.io.File(com.animalitostv.util.Constants.LOGO_PATH) }
+            val logoFile = remember { com.animalitostv.util.StoragePaths.logo }
             if (logoFile.exists()) {
                 AsyncImage(
                     model = logoFile,

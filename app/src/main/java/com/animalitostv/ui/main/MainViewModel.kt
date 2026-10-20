@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animalitostv.data.repository.ConfiguracionRepository
 import com.animalitostv.util.Constants
-import java.io.File
+import com.animalitostv.util.StoragePaths
 import com.animalitostv.data.repository.ResultadoRepository
 import com.animalitostv.domain.model.EstadisticasLoteria
 import com.animalitostv.domain.model.Loteria
@@ -35,7 +35,7 @@ data class MainUiState(
     val adPanelAnchoPercent: Int = 25,
     val adRotacionSegundos: Int = 10,
     val adAudio: Boolean = false,
-    val adCarpeta: String = "/sdcard/AnimalitosAds",
+    val adCarpeta: String = StoragePaths.ads.path,
     val tickerVelocidad: Float = 1.0f,
     val pantallaEncendida: Boolean = true,
     val cargando: Boolean = true,
@@ -57,6 +57,7 @@ class MainViewModel @Inject constructor(
 
     init {
         cargarConfiguracion()
+        observarNombreAgencia()
         observarResultados()
         actualizarEstadisticas()
         iniciarRefreshAutomatico()
@@ -83,6 +84,19 @@ class MainViewModel @Inject constructor(
     }
 
     private var jobResultados: Job? = null
+
+    /**
+     * El nombre de la agencia se guarda en Room desde la pantalla de configuración.
+     * Observarlo como Flow garantiza que el encabezado se actualice en cuanto se
+     * pulsa "Guardar", sin depender de volver a entrar a la pantalla.
+     */
+    private fun observarNombreAgencia() {
+        viewModelScope.launch {
+            configRepository.observe(Constants.Config.NOMBRE_AGENCIA).collect { nombre ->
+                _uiState.update { it.copy(nombreAgencia = nombre ?: "Mi Agencia") }
+            }
+        }
+    }
 
     private fun observarResultados(fecha: LocalDate = LocalDate.now()) {
         jobResultados?.cancel()
@@ -147,7 +161,7 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             while (true) {
                 val mensajes = runCatching {
-                    File(Constants.MENSAJES_PATH)
+                    StoragePaths.mensajes
                         .takeIf { it.exists() }
                         ?.readLines()
                         ?.map { it.trim() }

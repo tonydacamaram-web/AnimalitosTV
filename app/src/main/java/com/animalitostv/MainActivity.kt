@@ -4,6 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -17,9 +19,13 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.compose.rememberNavController
 import com.animalitostv.data.repository.ConfiguracionRepository
+import com.animalitostv.data.repository.LogRepository
 import com.animalitostv.service.AdHttpServer
 import com.animalitostv.service.CleanupWorker
 import com.animalitostv.service.DeviceNameHelper
@@ -29,6 +35,7 @@ import com.animalitostv.ui.navigation.AnimalitosNavGraph
 import com.animalitostv.ui.theme.AnimalitosTheme
 import com.animalitostv.util.Constants
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
@@ -37,6 +44,22 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var configRepository: ConfiguracionRepository
+
+    @Inject
+    lateinit var logRepository: LogRepository
+
+    private val storagePermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { concedido ->
+            if (!concedido) {
+                lifecycleScope.launch {
+                    logRepository.registrar(
+                        tipo = "ALMACENAMIENTO",
+                        mensaje = "El usuario denegó WRITE_EXTERNAL_STORAGE; las subidas del panel web fallarán",
+                        fuente = "MainActivity"
+                    )
+                }
+            }
+        }
 
     private var adHttpServer: AdHttpServer? = null
     private var mdnsAdvertiser: MdnsAdvertiser? = null
@@ -94,19 +117,38 @@ class MainActivity : ComponentActivity() {
 
     private fun solicitarPermisoStorage() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // API 30+: el acceso al almacenamiento compartido se concede en Ajustes.
             if (!Environment.isExternalStorageManager()) {
                 runCatching {
                     startActivity(
                         Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
                     )
+                }.onFailure {
+                    android.util.Log.e("MainActivity", "No se pudo abrir los ajustes de almacenamiento", it)
                 }
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            // API 23-29: permiso runtime clásico.
+            val permiso = Manifest.permission.WRITE_EXTERNAL_STORAGE
+            val concedido = ContextCompat.checkSelfPermission(this, permiso) ==
+                PackageManager.PERMISSION_GRANTED
+            if (!concedido) {
+                storagePermissionLauncher.launch(permiso)
             }
         }
     }
 
     private fun iniciarServidorAds() {
         try {
-            adHttpServer = AdHttpServer(Constants.AD_SERVER_PORT).apply { start() }
+            adHttpServer = AdHttpServer(
+                port = Constants.AD_SERVER_PORT,
+                contexto = applicationContext,
+                registrarLog = { tipo, mensaje, stack ->
+                    lifecycleScope.launch {
+                        logRepository.registrar(tipo, mensaje, "AdHttpServer", stack)
+                    }
+                }
+            ).apply { start() }
             android.util.Log.i("MainActivity", "Servidor de ads iniciado en puerto ${Constants.AD_SERVER_PORT}")
 
             // Fijar el hostname y publicar el servicio DNS-SD (mDNS → animalitostv.local)
@@ -114,6 +156,14 @@ class MainActivity : ComponentActivity() {
             mdnsAdvertiser = MdnsAdvertiser(this).also { it.register() }
         } catch (e: Exception) {
             android.util.Log.e("MainActivity", "No se pudo iniciar servidor de ads", e)
+            lifecycleScope.launch {
+                logRepository.registrar(
+                    tipo = "SERVIDOR",
+                    mensaje = "No se pudo iniciar el servidor de ads: ${e.message}",
+                    fuente = "MainActivity",
+                    stackTrace = e.stackTraceToString()
+                )
+            }
         }
     }
 

@@ -18,6 +18,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import com.animalitostv.ui.theme.FondoPrincipal
 import com.animalitostv.ui.theme.TextoSecundario
+import com.animalitostv.util.StoragePaths
 import kotlinx.coroutines.delay
 import java.io.File
 
@@ -159,7 +160,15 @@ private fun VideoPlayer(
 }
 
 private fun cargarArchivos(carpetaPath: String): List<ArchivoMedia> {
-    val carpeta = File(carpetaPath)
+    val configurada = File(carpetaPath)
+    // Si la ruta guardada en configuración no existe en este TV (por ejemplo una
+    // carpeta antigua "/sdcard/..." que el dispositivo no expone), usar la ruta
+    // real resuelta por StoragePaths, que es la misma donde escribe el servidor web.
+    val carpeta = when {
+        configurada.isDirectory -> configurada
+        StoragePaths.ads.isDirectory -> StoragePaths.ads
+        else -> configurada
+    }
     if (!carpeta.exists() || !carpeta.isDirectory) return emptyList()
     return carpeta.listFiles()
         ?.sortedBy { it.name }

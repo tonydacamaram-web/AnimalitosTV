@@ -19,11 +19,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.animalitostv.ui.theme.*
 import com.animalitostv.util.Constants
+import com.animalitostv.util.StoragePaths
 import java.time.format.DateTimeFormatter
 
 @Composable
@@ -89,11 +99,28 @@ fun ConfigScreen(
             LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item { SeccionTitulo("Branding") }
                 item {
-                    ConfigTextField(
-                        label = "Nombre de la agencia",
-                        value = state.nombreAgencia,
-                        onValueChange = viewModel::setNombreAgencia
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ConfigTextField(
+                            label = "Nombre de la agencia",
+                            value = state.nombreAgencia,
+                            onValueChange = viewModel::setNombreAgencia
+                        )
+                        TecladoNombreAgencia(
+                            valor = state.nombreAgencia,
+                            onCambio = viewModel::setNombreAgencia
+                        )
+                        Button(
+                            onClick = { viewModel.guardar() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF43A047)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "Guardar y volver",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
                 }
 
                 item { SeccionTitulo("Panel Publicitario") }
@@ -148,6 +175,7 @@ fun ConfigScreen(
                 }
 
                 item { SeccionTitulo("Gestión de Publicidad") }
+                item { AvisoPermisoAlmacenamiento() }
                 item {
                     val ip = viewModel.ipLocal
                     val puerto = Constants.AD_SERVER_PORT
@@ -486,5 +514,194 @@ private fun LogItem(log: com.animalitostv.data.local.entity.LogErrorEntity) {
             }
         }
         Text(log.mensaje, fontSize = 11.sp, color = TextoPrincipal, modifier = Modifier.padding(top = 2.dp))
+    }
+}
+
+// ── Teclado en pantalla para Smart TV ────────────────────────────────────────
+
+/**
+ * Teclado alfanumérico navegable con el control remoto (D-pad).
+ *
+ * En muchos televisores el teclado virtual del sistema no escribe en los
+ * OutlinedTextField de Compose, por lo que el nombre de la agencia nunca se
+ * actualizaba. Estos botones modifican el estado directamente.
+ */
+@Composable
+private fun TecladoNombreAgencia(
+    valor: String,
+    onCambio: (String) -> Unit
+) {
+    val filas = listOf(
+        listOf("A", "B", "C", "D", "E", "F"),
+        listOf("G", "H", "I", "J", "K", "L"),
+        listOf("M", "N", "Ñ", "O", "P", "Q"),
+        listOf("R", "S", "T", "U", "V", "W"),
+        listOf("X", "Y", "Z", "&", ",", "."),
+        listOf("0", "1", "2", "3", "4", "5"),
+        listOf("6", "7", "8", "9", "-", "←")
+    )
+
+    // Empieza en mayúsculas y, tras cada letra, vuelve a minúsculas (como un
+    // teclado de celular). El botón MAYÚS/minús permite forzar la próxima letra.
+    var mayusculas by remember { mutableStateOf(true) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            "Teclado en pantalla: selecciona con el control remoto",
+            fontSize = 10.sp,
+            color = TextoSecundario
+        )
+        filas.forEach { fila ->
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                fila.forEach { tecla ->
+                    val etiqueta = if (tecla.length == 1 && tecla[0].isLetter() && !mayusculas) {
+                        tecla.lowercase()
+                    } else {
+                        tecla
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            when {
+                                tecla == "←" -> onCambio(valor.dropLast(1))
+                                valor.length < 60 -> {
+                                    onCambio(valor + etiqueta)
+                                    if (tecla.length == 1 && tecla[0].isLetter()) {
+                                        mayusculas = false
+                                    }
+                                }
+                            }
+                        },
+                        modifier = Modifier.size(44.dp, 38.dp),
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextoPrincipal)
+                    ) {
+                        Text(etiqueta, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            OutlinedButton(
+                onClick = { mayusculas = !mayusculas },
+                modifier = Modifier.weight(1f).height(38.dp),
+                contentPadding = PaddingValues(0.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextoDorado)
+            ) {
+                Text(
+                    if (mayusculas) "MAYÚS" else "minús",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            OutlinedButton(
+                onClick = { if (valor.length < 60) onCambio("$valor ") },
+                modifier = Modifier.weight(1f).height(38.dp),
+                contentPadding = PaddingValues(0.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = TextoPrincipal)
+            ) {
+                Text("ESPACIO", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+            OutlinedButton(
+                onClick = { onCambio("") },
+                modifier = Modifier.weight(1f).height(38.dp),
+                contentPadding = PaddingValues(0.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE53935))
+            ) {
+                Text("LIMPIAR", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+// ── Permiso de almacenamiento ────────────────────────────────────────────────
+
+@Composable
+private fun AvisoPermisoAlmacenamiento() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var concedido by remember { mutableStateOf(hayPermisoAlmacenamiento()) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, evento ->
+            if (evento == Lifecycle.Event.ON_RESUME) {
+                concedido = hayPermisoAlmacenamiento()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (!concedido) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF3A1515)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        "Sin permiso de almacenamiento",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFF8A80)
+                    )
+                    Text(
+                        "El TV no puede guardar la publicidad que subes desde el panel web. " +
+                            "Concede \"Acceso a todos los archivos\" y vuelve a esta pantalla.",
+                        fontSize = 11.sp,
+                        color = TextoPrincipal
+                    )
+                    OutlinedButton(
+                        onClick = { abrirAjustesAlmacenamiento(context) },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = TextoDorado)
+                    ) {
+                        Text(
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+                                "Abrir ajustes de almacenamiento"
+                            else "Abrir ajustes de la app"
+                        )
+                    }
+                }
+            }
+        }
+        Text(
+            "Carpeta de publicidad en el TV: ${StoragePaths.ads.absolutePath}",
+            fontSize = 10.sp,
+            color = TextoSecundario
+        )
+    }
+}
+
+private fun hayPermisoAlmacenamiento(): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Environment.isExternalStorageManager()
+    } else {
+        true
+    }
+
+private fun abrirAjustesAlmacenamiento(context: android.content.Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        val directo = Intent(
+            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+            Uri.parse("package:${context.packageName}")
+        )
+        val abierto = runCatching { context.startActivity(directo) }.isSuccess
+        if (!abierto) {
+            // Algunos TV boxes no tienen la pantalla específica por app.
+            runCatching {
+                context.startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            }
+        }
+    } else {
+        runCatching {
+            context.startActivity(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:${context.packageName}")
+                )
+            )
+        }
     }
 }

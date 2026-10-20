@@ -3,6 +3,7 @@ package com.animalitostv.data.repository
 import com.animalitostv.data.local.dao.ConfiguracionDao
 import com.animalitostv.data.local.entity.ConfiguracionEntity
 import com.animalitostv.util.Constants
+import com.animalitostv.util.StoragePaths
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -57,7 +58,7 @@ class ConfiguracionRepository @Inject constructor(
         get(Constants.Config.AD_AUDIO, "false").toBoolean()
 
     suspend fun getAdCarpeta(): String =
-        get(Constants.Config.AD_CARPETA, Constants.SDCARD_ADS)
+        get(Constants.Config.AD_CARPETA, StoragePaths.ads.path)
 
     suspend fun getTickerVelocidad(): Float =
         get(Constants.Config.TICKER_VELOCIDAD, "1.0").toFloatOrNull() ?: 1.0f

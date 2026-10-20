@@ -1,112 +1,188 @@
 package com.animalitostv.service
 
+import android.content.Context
 import android.util.Log
+import com.animalitostv.util.StoragePaths
 import fi.iki.elonen.NanoHTTPD
 import java.io.File
+import java.net.URLEncoder
 
-class AdHttpServer(port: Int = 8080) : NanoHTTPD(port) {
-
-    private val carpetaAds    = File("/sdcard/AnimalitosAds").also { runCatching { it.mkdirs() } }
-    private val carpetaBase   = File("/sdcard/AnimalitosTV").also { runCatching { it.mkdirs() } }
-    private val carpetaFondos = File("/sdcard/AnimalitosTV/fondos").also { runCatching { it.mkdirs() } }
-    private val archivoMensajes = File("/sdcard/AnimalitosTV/mensajes.txt")
+/**
+ * Servidor web local para administrar el contenido del TV.
+ *
+ * - Usa [StoragePaths] (Environment.getExternalStorageDirectory) en lugar del literal "/sdcard".
+ * - Devuelve los errores reales en el navegador (antes se perdían silenciosamente).
+ * - Registra los fallos en el visor de logs de la app mediante [registrarLog].
+ */
+class AdHttpServer(
+    port: Int = 8080,
+    private val contexto: Context? = null,
+    private val registrarLog: ((tipo: String, mensaje: String, stackTrace: String?) -> Unit)? = null
+) : NanoHTTPD(port) {
 
     private val extMedia = setOf("jpg", "jpeg", "png", "webp", "bmp", "mp4", "avi", "mkv", "mov", "webm")
     private val extImagen = setOf("jpg", "jpeg", "png", "webp", "bmp")
+
+    init {
+        prepararCarpetas()
+    }
+
+    // ── Infraestructura ──────────────────────────────────────────────────────
+
+    private fun prepararCarpetas() {
+        listOf(StoragePaths.base, StoragePaths.ads, StoragePaths.fondos, StoragePaths.animales)
+            .forEach { carpeta ->
+                if (!StoragePaths.asegurar(carpeta)) {
+                    reportar("No se pudo crear la carpeta ${carpeta.absolutePath}")
+                }
+            }
+    }
+
+    private fun reportar(mensaje: String, stackTrace: String? = null) {
+        Log.e("AdHttpServer", mensaje)
+        registrarLog?.invoke("ALMACENAMIENTO", mensaje, stackTrace)
+    }
+
+    private fun hayPermisoEscritura(): Boolean =
+        contexto?.let { StoragePaths.permisoEscritura(it) } ?: true
+
+    private fun mensajePermiso(): String =
+        "El dispositivo no tiene permiso para escribir en el almacenamiento compartido.\n" +
+            "En el TV: Ajustes → Aplicaciones → AnimalitosTV → Permisos → Archivos y medios\n" +
+            "(o \"Acceso a todos los archivos\"). Luego vuelve a intentarlo.\n\n" +
+            "Ruta usada: ${StoragePaths.ads.absolutePath}"
 
     override fun serve(session: IHTTPSession): Response {
         return try {
             val uri = session.uri
             val method = session.method
             when {
-                method == Method.GET  && uri == "/"                  -> paginaHtml("ads")
-                method == Method.GET  && uri == "/logo"              -> paginaHtml("logo")
-                method == Method.GET  && uri == "/fondos"            -> paginaHtml("fondos")
-                method == Method.GET  && uri == "/mensajes"          -> paginaHtml("mensajes")
-                method == Method.POST && uri == "/upload/ads"        -> subirArchivos(session, carpetaAds, extMedia, "/")
-                method == Method.POST && uri == "/upload/logo"       -> subirLogo(session)
-                method == Method.POST && uri == "/upload/fondos"     -> subirArchivos(session, carpetaFondos, extImagen, "/fondos")
-                method == Method.POST && uri == "/mensajes/agregar"  -> agregarMensaje(session)
-                method == Method.GET  && uri == "/delete/ads"        -> eliminar(session, carpetaAds, "/")
-                method == Method.GET  && uri == "/delete/fondos"     -> eliminar(session, carpetaFondos, "/fondos")
-                method == Method.GET  && uri == "/delete/mensaje"    -> eliminarMensaje(session)
+                method == Method.GET && uri == "/" -> paginaHtml("ads", session)
+                method == Method.GET && uri == "/logo" -> paginaHtml("logo", session)
+                method == Method.GET && uri == "/fondos" -> paginaHtml("fondos", session)
+                method == Method.GET && uri == "/mensajes" -> paginaHtml("mensajes", session)
+                method == Method.POST && uri == "/upload/ads" -> subirArchivos(session, StoragePaths.ads, extMedia, "/")
+                method == Method.POST && uri == "/upload/logo" -> subirLogo(session)
+                method == Method.POST && uri == "/upload/fondos" -> subirArchivos(session, StoragePaths.fondos, extImagen, "/fondos")
+                method == Method.POST && uri == "/mensajes/agregar" -> agregarMensaje(session)
+                method == Method.GET && uri == "/delete/ads" ->
+                    confirmarEliminacion(session, StoragePaths.ads, "/", "publicidad", "ads")
+                method == Method.POST && uri == "/delete/ads" -> eliminar(session, StoragePaths.ads, "/")
+                method == Method.GET && uri == "/delete/fondos" ->
+                    confirmarEliminacion(session, StoragePaths.fondos, "/fondos", "fondo", "fondos")
+                method == Method.POST && uri == "/delete/fondos" -> eliminar(session, StoragePaths.fondos, "/fondos")
+                method == Method.GET && uri == "/delete/mensaje" -> eliminarMensaje(session)
                 else -> newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "404")
             }
         } catch (e: Exception) {
-            Log.e("AdHttpServer", "Error ${session.uri}", e)
-            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, "Error: ${e.message}")
+            reportar("Error procesando ${session.uri}: ${e.message}", e.stackTraceToString())
+            paginaAviso(
+                titulo = "Error inesperado",
+                detalle = "${e.message ?: e.javaClass.simpleName}\n\nRuta: ${session.uri}\n" +
+                    "Carpeta de publicidad: ${StoragePaths.ads.absolutePath}",
+                volver = "/"
+            )
         }
     }
 
-    // ── HTML principal con tabs ──────────────────────────────────────────────
+    // ── Páginas HTML ─────────────────────────────────────────────────────────
 
-    private fun paginaHtml(tab: String): Response {
-        val css = """
-            *{box-sizing:border-box;margin:0;padding:0}
-            body{background:#0f0f23;color:#e0e0e0;font-family:sans-serif;padding:16px}
-            h1{color:#ffd700;font-size:22px;margin-bottom:4px}
-            .sub{color:#aaa;font-size:13px;margin-bottom:16px}
-            .tabs{display:flex;gap:8px;margin-bottom:16px}
-            .tab{padding:8px 18px;border-radius:6px 6px 0 0;background:#1a1a2e;color:#aaa;text-decoration:none;font-size:14px;border-bottom:2px solid transparent}
-            .tab.active{color:#ffd700;border-bottom:2px solid #ffd700}
-            .card{background:#1a1a2e;border-radius:0 8px 8px 8px;padding:16px;margin-bottom:16px}
-            .card h3{color:#ffd700;font-size:13px;margin-bottom:12px;text-transform:uppercase;letter-spacing:1px}
-            input[type=file]{color:#e0e0e0;background:#0f0f23;border:1px solid #444;border-radius:4px;padding:8px;width:100%;margin-bottom:10px}
-            .btn{background:#43a047;color:#fff;border:none;padding:10px 20px;border-radius:4px;cursor:pointer;font-size:14px;width:100%}
-            .btn:hover{background:#2e7d32}
-            .info{background:#0d2137;border-radius:6px;padding:10px 14px;font-size:12px;color:#80cbc4;margin-bottom:12px}
-            table{width:100%;border-collapse:collapse}
-            th{color:#ffd700;font-size:12px;text-align:left;padding:6px 8px;border-bottom:1px solid #333}
-            td{padding:8px;border-bottom:1px solid #1e1e3a;font-size:13px;word-break:break-all}
-            a.del{color:#e53935;text-decoration:none;font-weight:bold}
-            .empty{text-align:center;color:#666;padding:20px}
-            .logo-preview{max-height:80px;max-width:200px;border-radius:4px;margin-bottom:10px}
-        """.trimIndent()
+    private fun css(): String = """
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{background:#0f0f23;color:#e0e0e0;font-family:sans-serif;padding:16px}
+        h1{color:#ffd700;font-size:22px;margin-bottom:4px}
+        .sub{color:#aaa;font-size:13px;margin-bottom:16px}
+        .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+        .tab{padding:8px 18px;border-radius:6px 6px 0 0;background:#1a1a2e;color:#aaa;text-decoration:none;font-size:14px;border-bottom:2px solid transparent}
+        .tab.active{color:#ffd700;border-bottom:2px solid #ffd700}
+        .card{background:#1a1a2e;border-radius:0 8px 8px 8px;padding:16px;margin-bottom:16px}
+        .card h3{color:#ffd700;font-size:13px;margin-bottom:12px;text-transform:uppercase;letter-spacing:1px}
+        input[type=file]{color:#e0e0e0;background:#0f0f23;border:1px solid #444;border-radius:4px;padding:8px;width:100%;margin-bottom:10px}
+        .btn{display:block;text-align:center;background:#43a047;color:#fff;border:none;padding:10px 20px;border-radius:4px;cursor:pointer;font-size:14px;width:100%;text-decoration:none}
+        .btn:hover{background:#2e7d32}
+        .btn.danger{background:#c62828}
+        .btn.danger:hover{background:#8e0000}
+        .info{background:#0d2137;border-radius:6px;padding:10px 14px;font-size:12px;color:#80cbc4;margin-bottom:12px;line-height:1.5}
+        .ok{background:#12351f;border:1px solid #2e7d32;border-radius:6px;padding:10px 14px;font-size:13px;color:#8fe3a8;margin-bottom:12px}
+        .bad{background:#3a1515;border:1px solid #c62828;border-radius:6px;padding:10px 14px;font-size:13px;color:#ff8a80;margin-bottom:12px;line-height:1.5}
+        table{width:100%;border-collapse:collapse}
+        th{color:#ffd700;font-size:12px;text-align:left;padding:6px 8px;border-bottom:1px solid #333}
+        td{padding:8px;border-bottom:1px solid #1e1e3a;font-size:13px;word-break:break-all}
+        a.del{color:#e53935;text-decoration:none;font-weight:bold}
+        .empty{text-align:center;color:#666;padding:20px}
+        .logo-preview{max-height:80px;max-width:200px;border-radius:4px;margin-bottom:10px}
+    """.trimIndent()
 
-        val content = when (tab) {
-            "logo"     -> tabLogo()
-            "fondos"   -> tabFondos()
+    private fun layout(tab: String, contenido: String): String = """
+        <!DOCTYPE html><html lang='es'>
+        <head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+        <title>AnimalitosTV — Admin</title><style>${css()}</style></head>
+        <body>
+        <h1>📺 AnimalitosTV</h1>
+        <p class='sub'>Panel de administración de contenido</p>
+        <div class='tabs'>
+          <a class='tab${if (tab == "ads") " active" else ""}' href='/'>Publicidad</a>
+          <a class='tab${if (tab == "logo") " active" else ""}' href='/logo'>Logo</a>
+          <a class='tab${if (tab == "fondos") " active" else ""}' href='/fondos'>Fondos animales</a>
+          <a class='tab${if (tab == "mensajes") " active" else ""}' href='/mensajes'>Mensajes ticker</a>
+        </div>
+        $contenido
+        </body></html>
+    """.trimIndent()
+
+    private fun paginaHtml(tab: String, session: IHTTPSession): Response {
+        val aviso = session.parameters["ok"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+        val banners = buildString {
+            if (aviso != null) append("<div class='ok'>✔ ${escapeHtml(aviso)}</div>")
+            if (!hayPermisoEscritura()) {
+                append("<div class='bad'>⚠ Sin permiso de escritura: los archivos que subas no se guardarán.<br>")
+                append("Ruta usada: ${escapeHtml(StoragePaths.ads.absolutePath)}</div>")
+            }
+        }
+        val contenido = banners + when (tab) {
+            "logo" -> tabLogo()
+            "fondos" -> tabFondos()
             "mensajes" -> tabMensajes()
-            else       -> tabAds()
+            else -> tabAds()
         }
-
-        val html = """
-            <!DOCTYPE html><html lang='es'>
-            <head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-            <title>AnimalitosTV — Admin</title><style>$css</style></head>
-            <body>
-            <h1>📺 AnimalitosTV</h1>
-            <p class='sub'>Panel de administración de contenido</p>
-            <div class='tabs'>
-              <a class='tab ${if (tab=="ads") "active" else ""}' href='/'>Publicidad</a>
-              <a class='tab ${if (tab=="logo") "active" else ""}' href='/logo'>Logo</a>
-              <a class='tab ${if (tab=="fondos") "active" else ""}' href='/fondos'>Fondos animales</a>
-              <a class='tab ${if (tab=="mensajes") "active" else ""}' href='/mensajes'>Mensajes ticker</a>
-            </div>
-            $content
-            </body></html>
-        """.trimIndent()
-
-        return newFixedLengthResponse(Response.Status.OK, "text/html; charset=UTF-8", html)
+        return newFixedLengthResponse(Response.Status.OK, "text/html; charset=UTF-8", layout(tab, contenido))
     }
+
+    private fun paginaAviso(titulo: String, detalle: String, volver: String): Response {
+        val contenido = """
+            <div class='card'>
+              <h3>${escapeHtml(titulo)}</h3>
+              <div class='bad' style='white-space:pre-wrap'>${escapeHtml(detalle)}</div>
+              <p style='margin-top:12px'><a class='btn' href='$volver'>Volver</a></p>
+            </div>
+        """.trimIndent()
+        return newFixedLengthResponse(Response.Status.OK, "text/html; charset=UTF-8", layout("", contenido))
+    }
+
+    private fun listar(carpeta: File): List<File> =
+        runCatching { carpeta.listFiles()?.filter { it.isFile }?.sortedBy { it.name.lowercase() } }
+            .getOrNull()
+            .orEmpty()
 
     // ── Tab Publicidad ───────────────────────────────────────────────────────
 
     private fun tabAds(): String {
-        val archivos = carpetaAds.listFiles()?.filter { it.isFile }?.sortedBy { it.name } ?: emptyList()
+        val carpeta = StoragePaths.ads
+        val archivos = listar(carpeta)
         val filas = if (archivos.isEmpty()) {
             "<tr><td colspan='3' class='empty'>Sin archivos publicitarios</td></tr>"
         } else {
             archivos.joinToString("") { f ->
                 val size = formatSize(f.length())
-                "<tr><td>${f.name}</td><td style='color:#aaa'>$size</td>" +
-                "<td><a class='del' href='/delete/ads?file=${f.name}' onclick=\"return confirm('Eliminar ${f.name}?')\">✕</a></td></tr>"
+                "<tr><td>${escapeHtml(f.name)}</td><td style='color:#aaa'>$size</td>" +
+                    "<td><a class='del' href='/delete/ads?file=${urlEncode(f.name)}'>✖ Eliminar</a></td></tr>"
             }
         }
         return """
             <div class='card'>
               <h3>Subir publicidad</h3>
-              <p class='info'>Soporta: jpg, png, webp, bmp, mp4, avi, mkv, mov, webm</p>
+              <p class='info'>Soporta: jpg, png, webp, bmp, mp4, avi, mkv, mov, webm<br>
+              Carpeta en el TV: ${escapeHtml(carpeta.absolutePath)}</p>
               <form method='POST' action='/upload/ads' enctype='multipart/form-data'>
                 <input type='file' name='files' multiple accept='.jpg,.jpeg,.png,.webp,.bmp,.mp4,.avi,.mkv,.mov,.webm'>
                 <button class='btn' type='submit'>⬆ Subir archivos</button>
@@ -123,17 +199,17 @@ class AdHttpServer(port: Int = 8080) : NanoHTTPD(port) {
     // ── Tab Logo ─────────────────────────────────────────────────────────────
 
     private fun tabLogo(): String {
-        val logoFile = File("/sdcard/AnimalitosTV/logo.png")
-        val preview = if (logoFile.exists()) {
-            "<p style='color:#aaa;font-size:12px;margin-bottom:6px'>Logo actual: logo.png (${formatSize(logoFile.length())})</p>"
+        val logo = StoragePaths.logo
+        val estado = if (logo.exists()) {
+            "<p style='color:#aaa;font-size:12px;margin-bottom:6px'>Logo actual: logo.png (${formatSize(logo.length())})</p>"
         } else {
             "<p style='color:#666;font-size:12px;margin-bottom:6px'>Sin logo cargado</p>"
         }
         return """
             <div class='card'>
               <h3>Logo del negocio</h3>
-              <p class='info'>El archivo se guardará como logo.png en /sdcard/AnimalitosTV/. Formatos: jpg, jpeg, png, webp</p>
-              $preview
+              <p class='info'>El archivo se guarda como logo.png en ${escapeHtml(StoragePaths.base.absolutePath)}. Formatos: jpg, jpeg, png, webp</p>
+              $estado
               <form method='POST' action='/upload/logo' enctype='multipart/form-data'>
                 <input type='file' name='logo' accept='.jpg,.jpeg,.png,.webp'>
                 <button class='btn' type='submit'>⬆ Subir logo</button>
@@ -145,29 +221,30 @@ class AdHttpServer(port: Int = 8080) : NanoHTTPD(port) {
     // ── Tab Fondos ───────────────────────────────────────────────────────────
 
     private fun tabFondos(): String {
-        val archivos = carpetaFondos.listFiles()?.filter { it.isFile }?.sortedBy { it.nameWithoutExtension.toIntOrNull() ?: 999 } ?: emptyList()
-        val cargados = archivos.size
+        val carpeta = StoragePaths.fondos
+        val archivos = listar(carpeta).sortedBy { it.nameWithoutExtension.toIntOrNull() ?: 999 }
         val filas = if (archivos.isEmpty()) {
             "<tr><td colspan='3' class='empty'>Sin fondos cargados (0 / 101)</td></tr>"
         } else {
             archivos.joinToString("") { f ->
                 val size = formatSize(f.length())
-                "<tr><td>${f.name}</td><td style='color:#aaa'>$size</td>" +
-                "<td><a class='del' href='/delete/fondos?file=${f.name}' onclick=\"return confirm('Eliminar ${f.name}?')\">✕</a></td></tr>"
+                "<tr><td>${escapeHtml(f.name)}</td><td style='color:#aaa'>$size</td>" +
+                    "<td><a class='del' href='/delete/fondos?file=${urlEncode(f.name)}'>✖ Eliminar</a></td></tr>"
             }
         }
         return """
             <div class='card'>
-              <h3>Fondos de animales ($cargados / 101)</h3>
+              <h3>Fondos de animales (${archivos.size} / 101)</h3>
               <p class='info'>Nombrar cada archivo con el número del animal: 0.png, 1.png … 100.png<br>
-              Tamaño recomendado: 360×120 px (ratio 3:1). Formato: png, jpg, webp</p>
+              Tamaño recomendado: 360×120 px (ratio 3:1). Formato: png, jpg, webp<br>
+              Carpeta en el TV: ${escapeHtml(carpeta.absolutePath)}</p>
               <form method='POST' action='/upload/fondos' enctype='multipart/form-data'>
                 <input type='file' name='files' multiple accept='.jpg,.jpeg,.png,.webp'>
                 <button class='btn' type='submit'>⬆ Subir fondos</button>
               </form>
             </div>
             <div class='card'>
-              <h3>Fondos cargados ($cargados)</h3>
+              <h3>Fondos cargados (${archivos.size})</h3>
               <table><thead><tr><th>Archivo</th><th>Tamaño</th><th></th></tr></thead>
               <tbody>$filas</tbody></table>
             </div>
@@ -178,7 +255,7 @@ class AdHttpServer(port: Int = 8080) : NanoHTTPD(port) {
 
     private fun tabMensajes(): String {
         val mensajes = runCatching {
-            archivoMensajes.takeIf { it.exists() }?.readLines()
+            StoragePaths.mensajes.takeIf { it.exists() }?.readLines()
                 ?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
         }.getOrDefault(emptyList())
 
@@ -187,7 +264,7 @@ class AdHttpServer(port: Int = 8080) : NanoHTTPD(port) {
         } else {
             mensajes.mapIndexed { i, msg ->
                 "<tr><td>${escapeHtml(msg)}</td>" +
-                "<td><a class='del' href='/delete/mensaje?i=$i' onclick=\"return confirm('Eliminar este mensaje?')\">✕</a></td></tr>"
+                    "<td><a class='del' href='/delete/mensaje?i=$i'>✖ Eliminar</a></td></tr>"
             }.joinToString("")
         }
 
@@ -209,10 +286,14 @@ class AdHttpServer(port: Int = 8080) : NanoHTTPD(port) {
         """.trimIndent()
     }
 
-    private fun escapeHtml(text: String): String =
-        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    private fun escapeHtml(texto: String): String = texto
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&#39;")
 
-    // ── Handlers de upload / delete ──────────────────────────────────────────
+    // ── Handlers de upload ───────────────────────────────────────────────────
 
     private fun subirArchivos(
         session: IHTTPSession,
@@ -220,87 +301,264 @@ class AdHttpServer(port: Int = 8080) : NanoHTTPD(port) {
         extensiones: Set<String>,
         redirigir: String
     ): Response {
-        val files = mutableMapOf<String, String>()
-        session.parseBody(files)
-        val params = session.parameters
-        var subidos = 0
-        files.forEach { (key, tempPath) ->
-            val nombre = params[key]?.firstOrNull() ?: return@forEach
-            val ext = nombre.substringAfterLast('.', "").lowercase()
-            if (ext !in extensiones) return@forEach
-            val nombreLimpio = nombre.substringAfterLast('/').substringAfterLast('\\')
-            runCatching {
-                File(tempPath).copyTo(File(destino, nombreLimpio), overwrite = true)
-                subidos++
-                Log.i("AdHttpServer", "Subido: $nombreLimpio → ${destino.name}/")
-            }.onFailure { Log.e("AdHttpServer", "Error al guardar $nombreLimpio", it) }
+        if (!hayPermisoEscritura()) {
+            return paginaAviso("Sin permiso de almacenamiento", mensajePermiso(), redirigir)
         }
-        Log.i("AdHttpServer", "$subidos archivo(s) subidos a ${destino.name}")
-        return redirect(redirigir)
+
+        val temporales = mutableMapOf<String, String>()
+        session.parseBody(temporales)
+
+        val nombres = session.parameters["files"].orEmpty()
+        if (nombres.isEmpty()) {
+            return paginaAviso(
+                "No se recibió ningún archivo",
+                "Selecciona al menos un archivo e inténtalo de nuevo.",
+                redirigir
+            )
+        }
+        if (!StoragePaths.asegurar(destino)) {
+            return paginaAviso(
+                "No se pudo crear la carpeta",
+                "No fue posible crear ${destino.absolutePath}.\n" +
+                    "Verifica el permiso de almacenamiento del TV.",
+                redirigir
+            )
+        }
+
+        var subidos = 0
+        val errores = mutableListOf<String>()
+
+        nombres.forEachIndexed { indice, nombreOriginal ->
+            // NanoHTTPD guarda los temporales multipart como "files", "files2", "files3"...
+            val claveTemporal = if (indice == 0) "files" else "files${indice + 1}"
+            val rutaTemporal = temporales[claveTemporal]
+            val nombre = nombreOriginal.substringAfterLast('/').substringAfterLast('\\').trim()
+            val extension = nombre.substringAfterLast('.', "").lowercase()
+
+            when {
+                rutaTemporal == null ->
+                    errores += "$nombre (archivo #${indice + 1}): no llegó el contenido"
+                nombre.isBlank() ->
+                    errores += "Archivo #${indice + 1}: nombre inválido"
+                extension !in extensiones ->
+                    errores += "$nombre: formato .$extension no permitido"
+                else -> {
+                    val archivoDestino = File(destino, nombre)
+                    val resultado = runCatching {
+                        File(rutaTemporal).copyTo(archivoDestino, overwrite = true)
+                    }
+                    if (resultado.isSuccess && archivoDestino.length() > 0) {
+                        subidos++
+                        Log.i("AdHttpServer", "Subido: $nombre → ${destino.absolutePath}")
+                    } else {
+                        val causa = resultado.exceptionOrNull()?.message ?: "el sistema rechazó la escritura"
+                        errores += "$nombre: $causa"
+                        reportar(
+                            "No se pudo guardar $nombre en ${destino.absolutePath}: $causa",
+                            resultado.exceptionOrNull()?.stackTraceToString()
+                        )
+                    }
+                }
+            }
+        }
+
+        return when {
+            errores.isEmpty() ->
+                redirectConAviso(redirigir, "$subidos archivo(s) subido(s) correctamente")
+            else -> paginaAviso(
+                titulo = if (subidos > 0) "Subida parcial ($subidos guardado(s))"
+                else "No se pudo subir ningún archivo",
+                detalle = errores.joinToString("\n") { "• $it" } +
+                    "\n\nCarpeta: ${destino.absolutePath}",
+                volver = redirigir
+            )
+        }
     }
 
     private fun subirLogo(session: IHTTPSession): Response {
-        val files = mutableMapOf<String, String>()
-        session.parseBody(files)
-        val params = session.parameters
-        val tempPath = files["logo"] ?: return redirect("/logo")
-        val nombre = params["logo"]?.firstOrNull() ?: return redirect("/logo")
-        val ext = nombre.substringAfterLast('.', "").lowercase()
-        if (ext !in extImagen) return redirect("/logo")
-        runCatching {
-            File(tempPath).copyTo(File("/sdcard/AnimalitosTV/logo.png"), overwrite = true)
-            Log.i("AdHttpServer", "Logo actualizado")
-        }.onFailure { Log.e("AdHttpServer", "Error al guardar logo", it) }
-        return redirect("/logo")
+        if (!hayPermisoEscritura()) {
+            return paginaAviso("Sin permiso de almacenamiento", mensajePermiso(), "/logo")
+        }
+
+        val temporales = mutableMapOf<String, String>()
+        session.parseBody(temporales)
+        val nombre = session.parameters["logo"]?.firstOrNull()
+        val rutaTemporal = temporales["logo"]
+        if (rutaTemporal == null) {
+            return paginaAviso("No se recibió el logo", "Selecciona un archivo de imagen.", "/logo")
+        }
+        val extension = nombre?.substringAfterLast('.', "")?.lowercase().orEmpty()
+        if (extension !in extImagen) {
+            return paginaAviso("Formato no permitido", "Usa jpg, jpeg, png o webp.", "/logo")
+        }
+        if (!StoragePaths.asegurar(StoragePaths.base)) {
+            return paginaAviso(
+                "No se pudo crear la carpeta",
+                "No fue posible crear ${StoragePaths.base.absolutePath}.",
+                "/logo"
+            )
+        }
+
+        val resultado = runCatching { File(rutaTemporal).copyTo(StoragePaths.logo, overwrite = true) }
+        return if (resultado.isSuccess && StoragePaths.logo.length() > 0) {
+            redirectConAviso("/logo", "Logo actualizado")
+        } else {
+            val causa = resultado.exceptionOrNull()?.message ?: "el sistema rechazó la escritura"
+            reportar("No se pudo guardar el logo: $causa", resultado.exceptionOrNull()?.stackTraceToString())
+            paginaAviso(
+                "No se pudo guardar el logo",
+                "$causa\n\nRuta: ${StoragePaths.logo.absolutePath}",
+                "/logo"
+            )
+        }
     }
 
+    // ── Handlers de mensajes ─────────────────────────────────────────────────
+
     private fun agregarMensaje(session: IHTTPSession): Response {
-        val body = mutableMapOf<String, String>()
-        session.parseBody(body)
+        if (!hayPermisoEscritura()) {
+            return paginaAviso("Sin permiso de almacenamiento", mensajePermiso(), "/mensajes")
+        }
+        val cuerpo = mutableMapOf<String, String>()
+        session.parseBody(cuerpo)
         val mensaje = session.parameters["mensaje"]?.firstOrNull()?.trim()
-            ?: return redirect("/mensajes")
-        if (mensaje.isBlank()) return redirect("/mensajes")
-        runCatching {
-            archivoMensajes.appendText("$mensaje\n")
-            Log.i("AdHttpServer", "Mensaje agregado: $mensaje")
-        }.onFailure { Log.e("AdHttpServer", "Error al guardar mensaje", it) }
-        return redirect("/mensajes")
+        if (mensaje.isNullOrBlank()) {
+            return redirectConAviso("/mensajes", "Escribe un mensaje antes de agregar")
+        }
+        if (!StoragePaths.asegurar(StoragePaths.base)) {
+            return paginaAviso(
+                "No se pudo crear la carpeta",
+                "No fue posible crear ${StoragePaths.base.absolutePath}.",
+                "/mensajes"
+            )
+        }
+        val resultado = runCatching { StoragePaths.mensajes.appendText("$mensaje\n") }
+        return if (resultado.isSuccess) {
+            redirectConAviso("/mensajes", "Mensaje agregado")
+        } else {
+            val causa = resultado.exceptionOrNull()?.message ?: "el sistema rechazó la escritura"
+            reportar("No se pudo guardar el mensaje: $causa", resultado.exceptionOrNull()?.stackTraceToString())
+            paginaAviso(
+                "No se pudo guardar el mensaje",
+                "$causa\n\nRuta: ${StoragePaths.mensajes.absolutePath}",
+                "/mensajes"
+            )
+        }
     }
 
     private fun eliminarMensaje(session: IHTTPSession): Response {
+        if (!hayPermisoEscritura()) {
+            return paginaAviso("Sin permiso de almacenamiento", mensajePermiso(), "/mensajes")
+        }
         val indice = session.parameters["i"]?.firstOrNull()?.toIntOrNull()
-            ?: return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "Falta 'i'")
-        runCatching {
-            val lineas = archivoMensajes.takeIf { it.exists() }
+            ?: return paginaAviso("Mensaje no indicado", "Falta el parámetro 'i'.", "/mensajes")
+        val lineas = runCatching {
+            StoragePaths.mensajes.takeIf { it.exists() }
                 ?.readLines()?.map { it.trim() }?.filter { it.isNotBlank() }
                 ?: emptyList()
-            if (indice in lineas.indices) {
-                val nuevas = lineas.toMutableList().also { it.removeAt(indice) }
-                archivoMensajes.writeText(nuevas.joinToString("\n") + if (nuevas.isNotEmpty()) "\n" else "")
-                Log.i("AdHttpServer", "Mensaje $indice eliminado")
-            }
-        }.onFailure { Log.e("AdHttpServer", "Error al eliminar mensaje", it) }
-        return redirect("/mensajes")
+        }.getOrDefault(emptyList())
+        if (indice !in lineas.indices) {
+            return paginaAviso("El mensaje ya no existe", "Índice $indice fuera de rango.", "/mensajes")
+        }
+        val nuevas = lineas.toMutableList().also { it.removeAt(indice) }
+        val resultado = runCatching {
+            StoragePaths.mensajes.writeText(
+                nuevas.joinToString("\n") + if (nuevas.isNotEmpty()) "\n" else ""
+            )
+        }
+        return if (resultado.isSuccess) {
+            redirectConAviso("/mensajes", "Mensaje eliminado")
+        } else {
+            val causa = resultado.exceptionOrNull()?.message ?: "el sistema rechazó la escritura"
+            reportar("No se pudo eliminar el mensaje: $causa", resultado.exceptionOrNull()?.stackTraceToString())
+            paginaAviso(
+                "No se pudo eliminar el mensaje",
+                "$causa\n\nRuta: ${StoragePaths.mensajes.absolutePath}",
+                "/mensajes"
+            )
+        }
+    }
+
+    // ── Handlers de borrado ──────────────────────────────────────────────────
+
+    private fun confirmarEliminacion(
+        session: IHTTPSession,
+        carpeta: File,
+        redirigir: String,
+        etiqueta: String,
+        accion: String
+    ): Response {
+        val nombre = session.parameters["file"]?.firstOrNull()
+            ?: return paginaAviso("Archivo no indicado", "Falta el parámetro 'file'.", redirigir)
+        val archivo = File(carpeta, nombre)
+        if (!archivo.canonicalPath.startsWith(carpeta.canonicalPath + File.separator)) {
+            return paginaAviso(
+                "Ruta no permitida",
+                "El archivo debe estar dentro de ${carpeta.absolutePath}.",
+                redirigir
+            )
+        }
+        if (!archivo.exists()) {
+            return paginaAviso("Archivo no encontrado", "${archivo.absolutePath} no existe.", redirigir)
+        }
+        val contenido = """
+            <div class='card'>
+              <h3>Eliminar $etiqueta</h3>
+              <p class='info'>¿Eliminar <b>${escapeHtml(archivo.name)}</b> de ${escapeHtml(carpeta.absolutePath)}?</p>
+              <form method='POST' action='/delete/$accion'>
+                <input type='hidden' name='file' value='${escapeHtml(archivo.name)}'>
+                <button class='btn danger' type='submit'>Sí, eliminar</button>
+              </form>
+              <p style='margin-top:12px'><a class='tab' href='$redirigir'>Cancelar</a></p>
+            </div>
+        """.trimIndent()
+        return newFixedLengthResponse(Response.Status.OK, "text/html; charset=UTF-8", layout(accion, contenido))
     }
 
     private fun eliminar(session: IHTTPSession, carpeta: File, redirigir: String): Response {
-        val nombre = session.parameters["file"]?.firstOrNull()
-            ?: return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "Falta 'file'")
-        val archivo = File(carpeta, nombre)
-        if (!archivo.canonicalPath.startsWith(carpeta.canonicalPath))
-            return newFixedLengthResponse(Response.Status.FORBIDDEN, MIME_PLAINTEXT, "Ruta no permitida")
-        if (archivo.exists()) {
-            archivo.delete()
-            Log.i("AdHttpServer", "Eliminado: $nombre")
+        if (!hayPermisoEscritura()) {
+            return paginaAviso("Sin permiso de almacenamiento", mensajePermiso(), redirigir)
         }
-        return redirect(redirigir)
+        val cuerpo = mutableMapOf<String, String>()
+        runCatching { session.parseBody(cuerpo) }
+        val nombre = session.parameters["file"]?.firstOrNull()
+            ?: return paginaAviso("Archivo no indicado", "Falta el parámetro 'file'.", redirigir)
+        val archivo = File(carpeta, nombre)
+        if (!archivo.canonicalPath.startsWith(carpeta.canonicalPath + File.separator)) {
+            return paginaAviso(
+                "Ruta no permitida",
+                "El archivo debe estar dentro de ${carpeta.absolutePath}.",
+                redirigir
+            )
+        }
+        if (!archivo.exists()) {
+            return paginaAviso("El archivo ya no existe", archivo.absolutePath, redirigir)
+        }
+        val borrado = runCatching { archivo.delete() }.getOrDefault(false)
+        return if (borrado) {
+            redirectConAviso(redirigir, "Eliminado: $nombre")
+        } else {
+            reportar("No se pudo eliminar ${archivo.absolutePath}")
+            paginaAviso(
+                "No se pudo eliminar el archivo",
+                "El sistema rechazó el borrado. Verifica el permiso de almacenamiento.\n\n" +
+                    archivo.absolutePath,
+                redirigir
+            )
+        }
     }
 
     // ── Utilidades ───────────────────────────────────────────────────────────
 
-    private fun redirect(url: String) =
+    private fun redirect(url: String): Response =
         newFixedLengthResponse(Response.Status.REDIRECT_SEE_OTHER, MIME_PLAINTEXT, "")
             .also { it.addHeader("Location", url) }
+
+    private fun redirectConAviso(ruta: String, mensaje: String): Response =
+        redirect("$ruta?ok=${urlEncode(mensaje)}")
+
+    private fun urlEncode(valor: String): String =
+        URLEncoder.encode(valor, "UTF-8").replace("+", "%20")
 
     private fun formatSize(bytes: Long): String {
         val kb = bytes / 1024

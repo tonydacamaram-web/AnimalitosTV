@@ -8,6 +8,7 @@ import com.animalitostv.data.repository.ConfiguracionRepository
 import com.animalitostv.data.repository.LogRepository
 import com.animalitostv.data.repository.ResultadoRepository
 import com.animalitostv.util.Constants
+import com.animalitostv.util.StoragePaths
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -26,7 +27,7 @@ data class ConfigUiState(
     val adPanelAncho: Int = 25,
     val adRotacionSegundos: Int = 10,
     val adAudio: Boolean = false,
-    val adCarpeta: String = Constants.SDCARD_ADS,
+    val adCarpeta: String = StoragePaths.ads.path,
     val tickerVelocidad: Float = 1.0f,
     val autoInicio: Boolean = false,
     val pantallaEncendida: Boolean = true,

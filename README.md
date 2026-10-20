@@ -96,6 +96,10 @@ Activar **"Instalar desde fuentes desconocidas"** en Ajustes → Seguridad.
 - **Tab Logo:** subir logo del negocio (se guarda como `logo.png` automáticamente)
 - **Tab Fondos animales:** subir hasta 101 fondos PNG (nombrar como `0.png` … `100.png`)
 - El panel publicitario recarga automáticamente cada 10 segundos los archivos nuevos
+- **Rutas reales:** el panel muestra la carpeta exacta que usa el TV (resuelta con `Environment.getExternalStorageDirectory()`)
+- **Errores visibles:** si una subida o un borrado falla, el navegador muestra el motivo (permiso, carpeta o escritura) en lugar de fallar en silencio
+- **Eliminar sin JavaScript:** el enlace abre una pantalla de confirmación y el borrado se ejecuta por `POST` (compatible con navegadores de TV que no soportan `confirm()`)
+- **Subida múltiple:** se pueden seleccionar varios archivos a la vez en Publicidad y Fondos
 
 ### Pantalla de configuración (PIN requerido)
 - Branding: nombre de agencia
@@ -105,6 +109,9 @@ Activar **"Instalar desde fuentes desconocidas"** en Ajustes → Seguridad.
 - **Gestión de Publicidad:** muestra la URL por nombre `http://animalitostv.local:8080` y el respaldo por IP, con la indicación de fijar el nombre del dispositivo si `.local` no responde
 - **Botón "Forzar actualización ahora"** — ejecuta scraping inmediato
 - Visor de logs de errores con timestamp y fuente
+- **Teclado en pantalla para el nombre de la agencia** — botones navegables con el control remoto (A–Z, Ñ, 0–9, espacio, `& , . -`, borrar y limpiar) y conmutador **MAYÚS/minús** (vuelve a minúsculas tras cada letra, como un teclado de celular), porque el teclado virtual del TV no siempre escribe en el campo
+- **Guardar y volver** — botón visible junto al teclado, además del ✓ de la barra superior
+- **Aviso de permiso de almacenamiento** — si falta "Acceso a todos los archivos", muestra un recuadro rojo con acceso directo a los ajustes del TV
 
 ### Historial
 - Navegación por fecha con ← / Hoy / →
@@ -234,8 +241,8 @@ h3 → "Resultados Lotto Activo"
 | `READ_EXTERNAL_STORAGE` | Publicidad y logos (API ≤ 32) |
 | `READ_MEDIA_IMAGES` | Imágenes publicitarias (API 33+) |
 | `READ_MEDIA_VIDEO` | Videos publicitarios (API 33+) |
-| `WRITE_EXTERNAL_STORAGE` | Guardar archivos subidos via HTTP (API ≤ 28) |
-| `MANAGE_EXTERNAL_STORAGE` | Guardar archivos subidos via HTTP (API 29+) |
+| `WRITE_EXTERNAL_STORAGE` | Guardar archivos subidos via HTTP (API 23–29; se solicita en runtime) |
+| `MANAGE_EXTERNAL_STORAGE` | Guardar archivos subidos via HTTP (API 30+) |
 | `RECEIVE_BOOT_COMPLETED` | Auto-inicio al encender |
 | `WAKE_LOCK` | Mantener pantalla encendida |
 | `FOREGROUND_SERVICE` | WorkManager |
@@ -243,6 +250,10 @@ h3 → "Resultados Lotto Activo"
 > **Android 11+:** Al primer inicio la app solicita el permiso "Acceso a todos los archivos" — necesario para que el servidor web pueda guardar los archivos subidos.
 >
 > **Nombre `.local`:** `WRITE_SETTINGS` no se concede automáticamente. Si no se concede, el nombre de red debe fijarse a mano en Ajustes del TV para que `animalitostv.local` resuelva.
+>
+> **Rutas de almacenamiento:** la app resuelve la carpeta con `Environment.getExternalStorageDirectory()` (normalmente `/storage/emulated/0`), no con el literal `/sdcard`, porque algunos TV boxes no exponen ese enlace aunque el permiso esté concedido. El panel web muestra la ruta exacta que está usando el TV.
+>
+> **Errores de subida/borrado:** el panel web muestra el motivo real (permiso, carpeta inexistente, escritura rechazada) y la subida múltiple funciona seleccionando varios archivos a la vez.
 
 ---
 
@@ -276,6 +287,17 @@ h3 → "Resultados Lotto Activo"
 
 **Configuración no se actualiza en pantalla principal:**
 - Al volver de Config, `MainScreen` recarga la configuración automáticamente via `repeatOnLifecycle(RESUMED)`
+**La publicidad no se sube o no se borra desde el panel web:**
+- Revisar el recuadro rojo del panel: ahora muestra el error real (permiso, carpeta o escritura)
+- En el TV, Configuración → Gestión de Publicidad debe indicar `Carpeta de publicidad en el TV: /storage/emulated/0/AnimalitosAds`
+- Si aparece "Sin permiso de almacenamiento": Ajustes → Aplicaciones → AnimalitosTV → Permisos → Archivos y medios (o "Acceso a todos los archivos") y reintentar
+- Los fallos también quedan en el visor de logs con la etiqueta `ALMACENAMIENTO`
+
+**El nombre de la agencia no cambia en el TV:**
+- Usar el teclado en pantalla de Configuración → Branding y pulsar "Guardar y volver"
+- El encabezado observa Room en vivo, por lo que se actualiza al guardar sin reiniciar la app
+
+
 
 ---
 
@@ -311,7 +333,18 @@ app/src/main/java/com/animalitostv/
 
 ## Changelog
 
-### v1.3 (actual)
+### v1.4 (actual)
+- **Fix cambio de nombre de agencia en Smart TV** — teclado alfanumérico en pantalla navegable con el control remoto (A–Z, Ñ, 0–9, espacio, `& , . -`, borrar y limpiar, MAYÚS/minús con auto-cambio); el `OutlinedTextField` se mantiene para tablets
+- **Fix encabezado desactualizado** — `MainViewModel` observa el `nombre_agencia` de Room como Flow y actualiza el header al guardar
+- **Fix subida/borrado de publicidad en TV** — rutas resueltas con `Environment.getExternalStorageDirectory()` en lugar del literal `/sdcard` (`StoragePaths`)
+- **Fix temporales de NanoHTTPD** — `java.io.tmpdir` se redirige al cache privado de la app en `AnimalitosApp.onCreate()`; en Android/TV el valor por defecto no es escribible y las subidas multipart fallaban
+- **Permisos de almacenamiento** — `WRITE_EXTERNAL_STORAGE` se solicita en runtime en API 23–29 (antes `maxSdkVersion=28` y sin solicitud); en API 30+ se verifica "Acceso a todos los archivos" y se muestra un aviso con acceso directo a los ajustes
+- **Panel web con errores visibles** — las subidas y borrados muestran el motivo real (permiso, carpeta o escritura) y registran el fallo en el visor de logs (`ALMACENAMIENTO`)
+- **Subida múltiple corregida** — se guardan todos los archivos seleccionados (NanoHTTPD usa claves `files`, `files2`, …)
+- **Borrado sin `confirm()`** — pantalla de confirmación y `POST` con nombre URL-encoded, compatible con navegadores de TV
+- **AdPanel** — si la carpeta configurada no existe en el TV, usa automáticamente la ruta real donde escribe el servidor
+
+### v1.3
 - **Selva Plus ampliada** — pasa a modalidad extendida: 101 figuras (`00` y `0`–`99`), 13 sorteos a las `:15` (8:15 AM a 8:15 PM) y catálogo `ANIMALES_GUACHARITO` (también en estadísticas)
 - **Fix Guacharito Millonario** — `maxAnimal` corregido a `99` (el `100` no existe; son 101 figuras: `00` y `0`–`99`)
 - **Nombre fijo de red (`animalitostv.local`)** — la app fija el nombre de dispositivo para que el hostname resuelva; IP visible como respaldo

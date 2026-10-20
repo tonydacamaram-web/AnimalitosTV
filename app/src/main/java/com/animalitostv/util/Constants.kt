@@ -6,12 +6,8 @@ object Constants {
 
     val ZONA_HORARIA_VE: ZoneId = ZoneId.of("America/Caracas")
 
-    const val SDCARD_BASE = "/sdcard/AnimalitosTV"
-    const val SDCARD_ADS = "/sdcard/AnimalitosAds"
-    const val LOGO_PATH = "$SDCARD_BASE/logo.png"
-    const val ANIMALES_PATH = "$SDCARD_BASE/animales"
-    const val FONDOS_PATH = "$SDCARD_BASE/fondos"
-    const val MENSAJES_PATH = "$SDCARD_BASE/mensajes.txt"
+    // Las rutas de contenido viven en StoragePaths (resueltas con Environment),
+    // porque el literal "/sdcard" no es válido en todos los TV boxes.
 
     const val SCRAPING_INTERVAL_MINUTES = 15L
     const val SCRAPING_RETRY_MAX = 3
